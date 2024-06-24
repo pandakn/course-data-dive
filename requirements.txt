@@ -1,0 +1,10 @@
+bitarray==2.9.2
+pdfreader==0.1.15
+pillow==10.3.0
+pycryptodome==3.20.0
+PyMuPDF==1.24.5
+PyMuPDFb==1.24.3
+pypdf==4.2.0
+python-dateutil==2.9.0.post0
+ruff==0.4.10
+six==1.16.0
