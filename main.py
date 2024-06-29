@@ -5,6 +5,7 @@ import json
 from typing import TypedDict, List
 import csv
 import os
+from itertools import chain
 
 logging.basicConfig(
 	level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s'
@@ -18,6 +19,7 @@ class Course(TypedDict):
 	credit: str
 	prerequisites: str
 	description: str
+	prerequisites_list: List[str]
 
 
 pattern = r"""
@@ -60,17 +62,20 @@ cr = m.group('credits')
 # print(cc, cn, cr)
 
 
+# TODO -> fix this to work with multiple course
 def remove_thai_chars(text):
-	# Character class that matches Thai characters
-	thai_chars = r'[\u0E00-\u0E7F]+\s+(\d+.*?)'
+	match_course_code = re.findall(course_code_pattern, text)
 
-	match = re.search(thai_chars, text)
+	if match_course_code:
+		print(match_course_code)
+		# Flatten the nested list and remove duplicates
+		flattened_list = list(set(chain.from_iterable(match_course_code)))
+		# remove empty string elements
+		flattened_list = [item for item in flattened_list if item.strip()]
 
-	if match:
-		print(match)
-		return text[: match.start()].replace('  ', '')
+		return flattened_list
 
-	return text
+	return None
 
 
 def extract_course_detail(lines) -> List[Course]:
@@ -95,9 +100,9 @@ def extract_course_detail(lines) -> List[Course]:
 		prereq_match = re.search(prerequisite_pattern, line)
 		if prereq_match and not pass_prerequisite:
 			# course['prerequisites'] = line.split(':')[1].strip()
-			course['prerequisites'] = remove_thai_chars(
-				prereq_match.group('course_pre_req')
-			)
+			# course['prerequisites'] = remove_thai_chars(
+			# 	prereq_match.group('course_pre_req')
+			# )
 
 			pass_prerequisite = True
 			start_line_description = idx + 1  # plus 1 to skip the line 'prerequisite'
@@ -127,6 +132,7 @@ def extract_course_detail(lines) -> List[Course]:
 				'credit': credits.strip() if credits else None,
 				'description': None,
 				'prerequisites': None,
+				'prerequisites_list': None,
 			}
 
 			courses.append(course)
@@ -135,15 +141,33 @@ def extract_course_detail(lines) -> List[Course]:
 		if course and course['code'] and credit_match:
 			course['credit'] = credit_match.string.strip()
 
-		# TODO -> make this to support multi-line prerequisite
+		# TODO -> make this to support multi-line prerequisite (WIP -> work in progress)
 		if course and not course['description']:
 			if start_line_description < end_line_description:
-				course['description'] = (
-					''.join(lines[start_line_description:end_line_description])
-					.replace('  ', ' ')
-					.strip()
-				)
+				"""
+				loop from last line of description towards the start line of prerequisite
+    			until an empty line is found (empty line is separates prerequisite and description; I wish it could fine any PDF lol😂)
+    			"""
+				for i in range(
+					end_line_description - 1, start_line_description - 1, -1
+				):
+					if not lines[i].strip():
+						course['description'] = (
+							''.join(lines[i + 1 : end_line_description])
+							.replace('  ', ' ')
+							.strip()
+						)
 
+						prereq = (
+							''.join(lines[start_line_description - 1 : i])
+							.replace('  ', ' ')
+							.strip()
+						)
+
+						course['prerequisites_list'] = remove_thai_chars(prereq)
+						course['prerequisites'] = prereq.split(':')[1].strip()
+
+						break
 				# reset index for other course
 				start_line_description = 0
 				end_line_description = 0
@@ -156,6 +180,9 @@ def extract_text_one_page(doc, page_number):
 	page = doc.load_page(page_number)
 	text = page.get_text('text', sort=True, flags=fitz.TEXT_INHIBIT_SPACES)
 	lines = text.splitlines()
+
+	# w = page.get_text('blocks')
+	# print(w)
 
 	return extract_course_detail(lines)
 
@@ -179,8 +206,9 @@ def extract_courses_from_pdf(pdf_path):
 	doc = fitz.open(pdf_path)
 
 	# first page start at `0`
-	courses = extract_text_one_page(doc=doc, page_number=16)
-	# courses = extract_text_all_page(doc=doc)
+	# courses = extract_text_one_page(doc=doc, page_number=16)
+
+	courses = extract_text_all_page(doc=doc)
 
 	return courses
 
@@ -192,6 +220,9 @@ def save_courses_to_csv(courses, csv_path):
 
 		writer.writeheader()
 		for course in courses:
+			if 'prerequisites_list' in course:
+				continue
+
 			writer.writerow(course)
 
 
@@ -247,17 +278,3 @@ save_courses_to_json(courses, json_path)
 
 logging.info(f'Courses saved to {csv_path}')
 logging.info(f'Courses saved to {json_path}')
-# [
-# 	{
-# 		'code': 'SCI05 1191',
-# 		'name': 'ปฏิบัติการฟิสิกส์ 1',
-# 		'credit': '1(0-3-0)',
-# 		'prereqs': 'SCI05 1001 ฟิสิกส์ 1 หรือเรียนควบคู่กับฟิสิกส์ 1 หรือโดยความเห็นชอบของสาขาวิชา',
-# 	},
-# 	{
-# 		'code': 'SCI05 1192',
-# 		'name': 'ปฏิบัติการฟิสิกส์ 2',
-# 		'credit': '1(0-3-0)',
-# 		'prereqs': 'SCI05 1191 ปฏิบัติการฟิสิกส์ 1 และ SCI05 1002 ฟิสิกส์ 2 หรือผ่านการเรียน SCI05 1191 ปฏิบัติการฟิสิกส์ 1 มาแล้ว และกำลังเรียน SCI05 1002 ฟิสิกส์ 2 อยู่ หรือโดยความเห็นชอบของสาขาวิชา',
-# 	},
-# ]
