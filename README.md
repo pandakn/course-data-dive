@@ -13,7 +13,7 @@ This project extracts course data from PDF files of SUT (Suranaree University of
 
 - Python 3.x
 - Virtual environment (`venv`) module
-- make cli (`optional`)
+- make cli (`optional`) (powerful command-line tool, pls install🤣)
 
 ## Installation
 
@@ -24,14 +24,23 @@ This project extracts course data from PDF files of SUT (Suranaree University of
    ```
 2. Create and activate the virtual environment, then install the dependencies:
    ```bash
-    make setup
+   make setup
    ```
+3. Activate the virtual environment:
+   - On macOS and Linux:
+     ```bash
+     source venv/bin/activate
+     ```
+   - On Windows:
+     ```bash
+     .\venv\Scripts\activate
+     ```
 
 ## Usage
 
 1. To extract course data from a PDF:
    ```bash
-    make run
+   make run
    ```
 2. The extracted data will be saved as courses.csv and courses.json in the same directory as the PDF file:
 
