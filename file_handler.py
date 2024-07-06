@@ -13,7 +13,8 @@ def save_courses_to_csv(courses, csv_path):
 		writer.writeheader()
 		for course in courses:
 			if 'prerequisites_list' in course:
-				del course['prerequisites_list']
+				continue
+
 			writer.writerow(course)
 
 
