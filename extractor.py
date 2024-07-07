@@ -9,6 +9,7 @@ from course import Course
 class CourseExtractor:
 	def __init__(self):
 		self.logger = logger.getChild('CourseExtractor')
+		self.courses_result: List[Course] = []
 		self.pattern = re.compile(
 			r"""
             ^(?P<course_code>
@@ -52,7 +53,6 @@ class CourseExtractor:
 
 		for idx, line in enumerate(lines):
 			line = line.strip()
-
 			# check empty string
 			if not line:
 				continue
@@ -60,7 +60,7 @@ class CourseExtractor:
 			if course and bool(course['code']) and not bool(course['name']):
 				course['name'] = line
 
-			prereq_match = re.search(self.prerequisite_pattern, line)
+			prereq_match = re.search(self.prerequisite_pattern, line, re.IGNORECASE)
 			if prereq_match and not pass_prerequisite:
 				pass_prerequisite = True
 
@@ -68,10 +68,14 @@ class CourseExtractor:
 				start_line_description = idx + 1
 				continue
 
+			# TODO -> should refactor this
 			# * get index of course learning outcomes for find course_description
 			if (
 				line == 'ผลลัพธ์การเรียนรู้ที่คาดหวังระดับรายวิชา'
 				or line.lower() == 'course learning outcomes (clos)'
+				or line.lower() == 'course learning outcomes (clos):'
+				or line.lower()
+				== 'ผลลัพธ์การเรียนรู้ที่คาดหวังระดับรายวิชา (course learning outcomes: clos):'
 			):
 				end_line_description = idx
 
@@ -80,19 +84,46 @@ class CourseExtractor:
 				if pass_prerequisite:
 					continue
 
-				course = {
-					'id': match.group('course_code').strip(),
-					'code': match.group('course_code').strip(),
-					'name': match.group('course_name').strip()
-					if match.group('course_name')
-					else None,
-					'credit': match.group('credits').strip()
-					if match.group('credits')
-					else None,
-					'description': None,
-					'prerequisites': None,
-					'prerequisites_list': None,
-				}
+				# TODO: refactor this
+				course_id = match.group('course_code').strip()
+				existing_course: Course = next(
+					(c for c in courses if c.get('id') == course_id), None
+				)
+
+				if existing_course:
+					# course = {
+					# 	'id': existing_course.get('id'),
+					# 	'code': existing_course.get('code'),
+					# 	'name': match.group('course_name').strip()
+					# 	if match.group('course_name')
+					# 	else None,
+					# 	'credit': existing_course.get('credit'),
+					# 	'description': None,
+					# 	'prerequisites': None,
+					# 	'prerequisites_list': existing_course.get('prerequisites_list'),
+					# }
+					# course = existing_course
+					continue
+				else:
+					existing_course = next(
+						(c for c in self.courses_result if c.get('id') == course_id),
+						None,
+					)
+					if existing_course:
+						continue
+					course = {
+						'id': course_id,
+						'code': course_id,
+						'name': match.group('course_name').strip()
+						if match.group('course_name')
+						else None,
+						'credit': match.group('credits').strip()
+						if match.group('credits')
+						else None,
+						'description': None,
+						'prerequisites': None,
+						'prerequisites_list': None,
+					}
 
 				courses.append(course)
 
@@ -107,7 +138,24 @@ class CourseExtractor:
 					for i in range(
 						end_line_description - 1, start_line_description - 1, -1
 					):
-						if not lines[i].strip():
+						if i == start_line_description and not course['description']:
+							course['description'] = (
+								''.join(lines[i:end_line_description])
+								.replace('  ', ' ')
+								.strip()
+							)
+							prereq = (
+								''.join(lines[start_line_description - 1 : i])
+								.replace('  ', ' ')
+								.strip()
+							)
+
+							course['prerequisites_list'] = self.remove_thai_chars(
+								prereq
+							)
+							course['prerequisites'] = prereq.split(':')[1].strip()
+
+						if not lines[i].strip() and i != end_line_description - 1:
 							course['description'] = (
 								''.join(lines[i + 1 : end_line_description])
 								.replace('  ', ' ')
@@ -141,10 +189,11 @@ class CourseExtractor:
 		self.logger.info(f'Extracting courses from {pdf_path}')
 
 		doc = fitz.open(pdf_path)
-		courses: List[Course] = []
 
 		for page_number in range(doc.page_count):
 			lines = self.extract_text_from_page(doc, page_number)
-			courses += self.extract_course_detail(lines)
+			self.courses_result += self.extract_course_detail(lines)
 
-		return courses
+		unique_courses = {course['id']: course for course in self.courses_result}
+
+		return list(unique_courses.values())
